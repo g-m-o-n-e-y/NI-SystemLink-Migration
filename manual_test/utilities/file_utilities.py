@@ -68,13 +68,15 @@ class FileUtilities:
         properties: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         upload: Dict[str, Any] = {'file': (filename, contents)}
+        data = None
         if properties:
-            upload['metadata'] = json.dumps(properties)
+            data = {'metadata': json.dumps(properties)}
 
         response = test.post(
             UPLOAD_ROUTE,
             params={'workspace': workspace},
             files=upload,
+            data=data,
             retries=test.build_default_400_retry())
         response.raise_for_status()
         return response.json()
