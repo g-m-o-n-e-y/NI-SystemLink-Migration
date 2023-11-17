@@ -1,16 +1,19 @@
 import base64
 import json
 from manual_test.manual_test_base import ManualTestBase
+from manual_test.utilities.workspace_utilities import WorkspaceUtilities
+from manual_test.utilities.workspace_utilities import TEST_WORKSPACE_NAME
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-GET_ALL_FILES_ROUTE = '/nifile/v1/service-groups/Default/files'
-GET_FILE_ROUTE_FORMAT = '/nifile/v1/service-groups/Default/files/?id={file_id}'
-UPLOAD_ROUTE = '/nifile/v1/service-groups/Default/upload-files'
+GET_ALL_FILES_ROUTE = "/nifile/v1/service-groups/Default/files"
+GET_WORKSPACE_FILES_POST_ROUTE = "/nifile/v1/service-groups/Default/query-files"
+GET_FILE_ROUTE_FORMAT = "/nifile/v1/service-groups/Default/files/?id={file_id}"
+UPLOAD_ROUTE = "/nifile/v1/service-groups/Default/upload-files"
 
-ASSETS_PATH = Path(__file__).parent.parent / 'assets'
-IMAGE_PATH = str(ASSETS_PATH / 'Image.png')
-TDMS_PATH = str(ASSETS_PATH / 'Data.tdms')
+ASSETS_PATH = Path(__file__).parent.parent / "assets"
+IMAGE_PATH = str(ASSETS_PATH / "Image.png")
+TDMS_PATH = str(ASSETS_PATH / "Data.tdms")
 
 
 class FileUtilities:
@@ -20,7 +23,7 @@ class FileUtilities:
         workspace: str,
         contents: str,
         filename: str,
-        properties: Optional[Dict[str, str]] = None
+        properties: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Uploads a string to the SystemLink server as a text file
@@ -39,7 +42,7 @@ class FileUtilities:
         workspace: str,
         path: str,
         filename: Optional[str] = None,
-        properties: Optional[Dict[str, str]] = None
+        properties: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Uploads a file to the SystemLink server
@@ -51,13 +54,10 @@ class FileUtilities:
         :param properties: properties to add to the file on the server
         """
 
-        with open(path, 'rb') as contents:
+        with open(path, "rb") as contents:
             return self.__upload_file(
-                test,
-                workspace,
-                contents,
-                filename or Path(path).name,
-                properties)
+                test, workspace, contents, filename or Path(path).name, properties
+            )
 
     def __upload_file(
         self,
@@ -65,26 +65,29 @@ class FileUtilities:
         workspace: str,
         contents: Any,
         filename: str,
-        properties: Optional[Dict[str, str]] = None
+        properties: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        upload: Dict[str, Any] = {'file': (filename, contents)}
+        upload: Dict[str, Any] = {"file": (filename, contents)}
+        data = {}
         if properties:
-            upload['metadata'] = json.dumps(properties)
+            data["metadata"] = json.dumps(properties)
 
         response = test.post(
             UPLOAD_ROUTE,
-            params={'workspace': workspace},
+            params={"workspace": workspace},
             files=upload,
-            retries=test.build_default_400_retry())
+            data=data,
+            retries=test.build_default_400_retry(),
+        )
         response.raise_for_status()
         return response.json()
 
-    def get_file(self,  test: ManualTestBase, file_id: str) -> Dict[str, Any]:
+    def get_file(self, test: ManualTestBase, file_id: str) -> Dict[str, Any]:
         uri = GET_FILE_ROUTE_FORMAT.format(file_id=file_id)
         response = test.get(uri)
         response.raise_for_status()
 
-        file = response.json()['availableFiles'][0]
+        file = response.json()["availableFiles"][0]
         return self.__extract_single_file_details(test, file)
 
     def get_files(self, test: ManualTestBase) -> Dict[str, Dict[str, Any]]:
@@ -93,10 +96,18 @@ class FileUtilities:
         count = take
         all_files = {}
         while count == take:
-            response = test.get(GET_ALL_FILES_ROUTE, params={'take': take, 'skip': skip})
+            # response = test.get(GET_ALL_FILES_ROUTE, params={"take": take, "skip": skip})
+            response = test.post(
+                GET_WORKSPACE_FILES_POST_ROUTE,
+                params={
+                    "take": take,
+                    "skip": skip,
+                    "workspace": WorkspaceUtilities().get_workspace_id(TEST_WORKSPACE_NAME, test),
+                },
+            )
             response.raise_for_status()
 
-            received_files = response.json()['availableFiles']
+            received_files = response.json()["availableFiles"]
             count = len(received_files)
             details = self.__extract_file_details(test, received_files)
             all_files.update(details)
@@ -106,16 +117,19 @@ class FileUtilities:
         return all_files
 
     def __extract_file_details(self, test: ManualTestBase, files) -> Dict[str, Dict[str, Any]]:
-        return {file['id']: file for file in [self.__extract_single_file_details(test, file) for file in files]}
+        return {
+            file["id"]: file
+            for file in [self.__extract_single_file_details(test, file) for file in files]
+        }
 
     def __extract_single_file_details(self, test: ManualTestBase, file) -> Dict[str, Any]:
-        data_url = file['_links']['data']['href']
+        data_url = file["_links"]["data"]["href"]
         contents = self.__download_file_contents(test, data_url)
-        file['contents'] = contents
+        file["contents"] = contents
         return file
 
     def __download_file_contents(self, test: ManualTestBase, url):
         response = test.get(url)
         response.raise_for_status()
 
-        return base64.b64encode(response.content).decode('utf-8')
+        return base64.b64encode(response.content).decode("utf-8")
